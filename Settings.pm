@@ -118,7 +118,7 @@ my %hPrefDefaults = (
 						'bPowerOffPlayers'				=>	1,
 
 					#Alternate Server:------------------------------------------
-						'szAltServerName'				=>	Slim::Networking::SqueezeNetwork->get_server('sn'),
+						'szAltServerName'				=>	"localhost:9000",
 						'nAltServerPostPushDelay'		=>	30,					#amount of time to wait after pushing players before taking action..
 						'bAltServerPushAll'				=>	0,					#Push ALL connected players to the alt server
 						'bAltServerUnSyncLocal'			=>	1,					#Perform an unsync before pushing to the alternate server..

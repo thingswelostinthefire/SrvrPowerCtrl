@@ -656,14 +656,6 @@ sub OnWakeupWatchdog {
 		#perform our OnWakup cmd..
 		Plugins::SrvrPowerCtrl::Util::SystemExecCmd(undef, $g{prefs}->szOnWakeup_cmd, $nCurTime);
 
-		# Pull back any players from SqueezeNetwork that we want..
-		if ($g{prefs}->bOnWakeupFetchPlayers) {
-			#force SBS to refresh the list of mysb.com players 20 seconds before we try to fetch back..
-			my $nDelay = max(2, $g{prefs}->nOnWakeupFetchPlayersDelay - 20);
-			Slim::Utils::Timers::setTimer( undef, time() + $nDelay, \&Slim::Networking::SqueezeNetwork::Players::fetch_players, );
-			$g{tPendingPullFromASTimer} = Slim::Utils::Timers::setTimer(undef, time() + $g{prefs}->nOnWakeupFetchPlayersDelay, \&Plugins::SrvrPowerCtrl::AltServer::PullFromAltServer, );
-		}
-
 	}
 
 	#Re-activate the IdleSystem monitor if it's disabled..

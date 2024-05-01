@@ -220,29 +220,6 @@ sub GetNextAlarm {
 	}
 
 
-	#check the SqueezeNetwork connected players too..
-	my @aSNPlayers = Slim::Networking::SqueezeNetwork::Players->get_players();
-	foreach my $player (@aSNPlayers ) {
-
-		$szAlarmClientID = $player->{mac};
-		$szAlarmClientName = $player->{name};
-
-		$alarms = getClientAlarms($szAlarmClientID);
-		if (defined($alarms)){
-
-			$nAlarmTime = getNextAlarmTime($alarms, $nTime, $szAlarmClientName);
-			$g{log}->is_debug && $g{log}->debug("SN $szAlarmClientName next alarm time == $nAlarmTime..");
-
-			#if ( (!$nNextAlarmTime) || ($nNextAlarmTime > $nAlarmTime) ) {
-			if ( $nAlarmTime && ((!$nNextAlarmTime) || ($nNextAlarmTime > $nAlarmTime)) ) {
-				$nNextAlarmTime = $nAlarmTime;
-				$szNextAlarmClientID = $szAlarmClientID;
-				$szNextAlarmClientName = $szAlarmClientName;
-			}
-		}
-	}
-
-
 	if ($nNextAlarmTime) {
 		$g{log}->is_debug && $g{log}->debug ( "The next alarm belongs to $szNextAlarmClientName:$szNextAlarmClientID scheduled for $nNextAlarmTime [" . Slim::Utils::DateTime::shortDateF($nNextAlarmTime) . " " . Slim::Utils::DateTime::timeF($nNextAlarmTime) . "]");
 	} else {

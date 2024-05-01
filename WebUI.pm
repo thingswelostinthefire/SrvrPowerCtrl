@@ -325,14 +325,7 @@ sub RenderActionDonePage {
 		$confmessage = $item->{'messagedone'} . "..";
 		$nDeferTime = $item->{refreshwait};
 
-		if ( $item->{'push2as'} &&
-			$g{prefs}->szAltServerName eq Slim::Networking::SqueezeNetwork->get_server('sn') &&
-			!$g{prefs}->{bNoWebUIRedirect2SN} ) {
-			$params->{refreshurl} = 'http://' . Slim::Networking::SqueezeNetwork->get_server('sn') . '/player/playerControl';
-			$nDeferTime = 5;
-		} else {
-			$params->{refreshurl} = "home.html";
-		}
+		$params->{refreshurl} = "home.html";
 	} else {
 		$message = "Bad action: $action";
 		$confmessage = $message;

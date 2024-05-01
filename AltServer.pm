@@ -43,18 +43,8 @@ use vars qw(%g);
 sub GetAltServerList {
 	my $bSaveList = shift || 0;
 
-	# Start with mysb.com...
-	my $altserver   = Slim::Networking::SqueezeNetwork->get_server('sn');
-
-	#mysb.com doesn't get an IP because we treat it differently..
-	my $server = {
-		'serverName'			=> "$altserver",
-		'serverIP'			=> "$altserver",
-		#serverIsTinySC		=> 0,
-		};
-
+	my $server;
 	my @otherservers;
-	push ( @otherservers, $server );
 
 	#Our server ip
 	my $my_ip = Slim::Utils::Network::serverAddr();
@@ -97,40 +87,11 @@ sub SaveAltServerList {
 sub GetAltServerPlayers {
 	my $szAltServerName = shift;
 	my $szAltServerIP = shift;
-	my $szSNServer = shift || Slim::Networking::SqueezeNetwork->get_server('sn');
 	my @otherplayers = ();
 	my $player = {};
 
 	#Who are we looking for?
 	$g{log}->debug( "Trying to get list of players from $szAltServerName ($szAltServerIP).." );
-
-	if (!defined($szAltServerName) && !defined($szAltServerIP)) {
-		$szAltServerName = $szSNServer;
-		$szAltServerIP = $szSNServer;
-	}
-
-	#If we're asking for mysb.com players..
-	if ($szAltServerName eq $szSNServer || $szAltServerIP eq $szSNServer) {
-		if ($szAltServerName ne $szSNServer) {
-			$szAltServerName = $szSNServer;
-		}
-
-		#We won't have the new players in time..but so what..
-		Slim::Networking::SqueezeNetwork::Players::fetch_players();
-
-		$player = {};
-
-		my @sn_players_raw = Slim::Networking::SqueezeNetwork::Players->get_players();
-		foreach my $sn_player (@sn_players_raw) {
-			$player = {	playerID		=>	$sn_player->{mac},
-						playerModel		=>	$sn_player->{model},
-						playerName		=>	$sn_player->{name},
-						};
-			push (@otherplayers, $player);
-		}
-		$g{log}->debug( "Other players on $szAltServerName ($szAltServerIP): " . Data::Dump::dump(@otherplayers));
-		return \@otherplayers;
-	}
 
 	#Hash of all SBSs found...including us..
 	my $other_servers = Slim::Networking::Discovery::Server::getServerList();
@@ -236,9 +197,7 @@ sub PushToAltServer {
 	# Where to push to?
 	#########################################################################################################
 	# Alternate server: $g{prefs}->szAltServerName
-	# If alt server not resolvable or pingable, then mysb.com
 	#
-	my $szSNAddr = Slim::Networking::SqueezeNetwork->get_server('sn');
 	my $szAltServer = $g{prefs}->szAltServerName;
 	my $szAltServerIP;
 
@@ -250,15 +209,7 @@ sub PushToAltServer {
 				last;
 			}
 		}
-	} else {
-		$szAltServer = 	$szSNAddr;
 	}
-
-	#If we didn't find the IP, fallback to mysb.com..
-	if (!defined($szAltServerIP)) {
-		$szAltServerIP = $szSNAddr;
-	}
-
 
 	#########################################################################################################
 	# Delete our menu from the calling jive..
@@ -349,11 +300,6 @@ sub PushToAltServer {
 	$g{prefs}->set('aPushedAltServerPlayers',	\@aPushedClientMACs );
 
 
-	if ($szAltServerIP eq $szSNAddr) {
-		#Refresh the list of players..
-		Slim::Utils::Timers::setTimer( undef, time() + $nDelay, \&Slim::Networking::SqueezeNetwork::Players::fetch_players, );
-	}
-
 	#Return the number of clients pushed and how long to wait for the queued json requests to complete...
 	return (scalar(@aPushedClientMACs), $nDelay);
 }
@@ -420,13 +366,8 @@ sub UnSyncAllLocalPlayers {
 sub PowerOffAllRemotePlayers {
 	my $szAltServer = shift;
 	my $szAltServerIP = shift;
-	my $szSNAddr = shift || Slim::Networking::SqueezeNetwork->get_server('sn');
 
-	my $aAltServerPlayers = GetAltServerPlayers($szAltServer, $szAltServerIP, $szSNAddr);
-
-	if (!$szAltServerIP) {
-		$szAltServerIP = $szSNAddr;
-	}
+	my $aAltServerPlayers = GetAltServerPlayers($szAltServer, $szAltServerIP);
 
 	foreach my $player (@{$aAltServerPlayers}) {
 		RemotePlayerRequest(undef, $player->{playerID}, $szAltServerIP, ['power', '0']);
@@ -437,13 +378,8 @@ sub PowerOffAllRemotePlayers {
 sub UnSyncAllRemotePlayers {
 	my $szAltServer = shift;
 	my $szAltServerIP = shift;
-	my $szSNAddr = shift || Slim::Networking::SqueezeNetwork->get_server('sn');
 
-	my $aAltServerPlayers = GetAltServerPlayers($szAltServer, $szAltServerIP, $szSNAddr);
-
-	if (!$szAltServerIP) {
-		$szAltServerIP = $szSNAddr;
-	}
+	my $aAltServerPlayers = GetAltServerPlayers($szAltServer, $szAltServerIP);
 
 	foreach my $player (@{$aAltServerPlayers}) {
 		RemotePlayerRequest(undef, $player->{playerID}, $szAltServerIP, ['sync', '-']);
@@ -458,31 +394,20 @@ sub PullFromAltServer {
 	#Lookup what we did before..
 	my $aPushedClientMACs = $g{prefs}->get('aPushedAltServerPlayers');
 	my $szAltServer = $g{prefs}->get('szPushedAltServerName');
-	my $szSNAddr = Slim::Networking::SqueezeNetwork->get_server('sn');
 	my $szAltServerIP;
 
 	#########################################################################################################
 	# Where to fetch from?
 	#########################################################################################################
 
-	if ($szAltServer ne $szSNAddr) {
-
-		#Get the IP of the AltServer by name..
-		if ($szAltServer) {
-			for (@{GetAltServerList()}) {
-				if ( $_->{serverName} eq $szAltServer ) {
-					$szAltServerIP = $_->{serverIP};
-					last;
-				}
+	#Get the IP of the AltServer by name..
+	if ($szAltServer) {
+		for (@{GetAltServerList()}) {
+			if ( $_->{serverName} eq $szAltServer ) {
+				$szAltServerIP = $_->{serverIP};
+				last;
 			}
-		} else {
-			$szAltServer = 	$szSNAddr;
 		}
-	}
-
-	#If we didn't find the IP, default to mysb.com..
-	if (!defined($szAltServerIP)) {
-		$szAltServerIP = $szSNAddr;
 	}
 
 	$g{log}->is_debug && $g{log}->debug("Fetching from $szAltServer ($szAltServerIP): " . Data::Dump::dump($aPushedClientMACs));
@@ -514,17 +439,8 @@ sub PullFromAltServer {
 
 	#Add specific Macs to the fetch list if they're not there alreay...
 	#Get the list of players currently on the alternate server, finding the server by name..
-	my $aAltServerPlayers = GetAltServerPlayers($szAltServer, $szAltServerIP, $szSNAddr);
+	my $aAltServerPlayers = GetAltServerPlayers($szAltServer, $szAltServerIP);
 	#$g{log}->is_debug && $g{log}->debug("Other Players on $szAltServer ($szAltServerIP): " . Data::Dump::dump($aAltServerPlayers));
-
-	#If the list of players on $szAltServerIP is empty, should we check at mysb.com too?
-	if ( (!defined(${$aAltServerPlayers}[0])  || !@$aAltServerPlayers) && ($szAltServerIP ne $szSNAddr) ) {
-		$g{log}->is_debug && $g{log}->debug("No players on $szAltServerIP...trying $szSNAddr too..");
-		$szAltServer = $szSNAddr;
-		$szAltServerIP = $szSNAddr;
-		$aAltServerPlayers = GetAltServerPlayers(undef, undef, $szSNAddr);
-		#$g{log}->is_debug && $g{log}->debug("Other Players on $szAltServerIP: " . Data::Dump::dump($aAltServerPlayers));
-	}
 
 	#my $nDelay = 1;
 	#Do we want to fetch all players, even if we don't remember pushing them??
@@ -558,13 +474,6 @@ sub PullFromAltServer {
 	#Erase the list of pushed players..
 	$g{prefs}->set('aPushedAltServerPlayers', '');
 	$g{prefs}->get('szPushedAltServerName', '');
-
-	#If we've pulled from mysb.com, update the player list there..
-	if ($szAltServerIP eq $szSNAddr) {
-		#Refresh the list of players..
-		Slim::Utils::Timers::setTimer( undef, time() + 25, \&Slim::Networking::SqueezeNetwork::Players::fetch_players, );
-	}
-
 
 	return 1;
 }
@@ -610,8 +519,6 @@ sub RemotePlayerRequest {
 	#the requests are passed in via an array ref..
 	my $args = shift;
 
-	$server ||= Slim::Networking::SqueezeNetwork->get_server('sn');
-
 	#$g{log}->is_debug && $g{log}->debug("Attempting to send request @args for $client_id on $server");
 
 	if (!$client_id) {
@@ -620,28 +527,17 @@ sub RemotePlayerRequest {
 
 	my $http;
 
-	# If mysb.com..
-	if ( $server =~ /^www.(?:squeezenetwork|mysqueezebox).com$/i || $server =~ /^www.test.(?:squeezenetwork|mysqueezebox).com$/i ) {
 
-		$http = Slim::Networking::SqueezeNetwork->new(
-			\&_json_done,
-			\&_json_error,
-		);
+	$server = Slim::Networking::Discovery::Server::getWebHostAddress($server);
+	chop($server);
 
-	} else {
-
-		$server = Slim::Networking::Discovery::Server::getWebHostAddress($server);
-		chop($server);
-
-		$http = Slim::Networking::SimpleAsyncHTTP->new(
-			\&_json_done,
-			\&_json_error,
-			{
-				timeout	=> 30,
-			}
-		);
-
-	}
+	$http = Slim::Networking::SimpleAsyncHTTP->new(
+		\&_json_done,
+		\&_json_error,
+		{
+			timeout	=> 30,
+		}
+	);
 
 	my $postdata = to_json({
 		id     => 1,
